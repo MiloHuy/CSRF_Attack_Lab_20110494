@@ -1,9 +1,9 @@
 from flask import Flask, request, make_response, render_template_string
 import json
+import secrets
 
 app = Flask(__name__)
 
-# Simulate a database
 user_accounts = {
     'alice': {'balance': 10000, 'password': 'alice'},
     'attacker': {'balance': 0, 'password': '12345'},
@@ -20,8 +20,10 @@ def login():
         username = request.form['username']
         password = request.form['password']
         if username in user_accounts and user_accounts[username]['password'] == password:
+            token = secrets.token_hex(16)  # Generate CSRF token
+            session_data = {'username': username, 'csrf_token': token}
             resp = make_response(f"Logged in as {username}")
-            resp.set_cookie('user_session', json.dumps({'username': username}))
+            resp.set_cookie('user_session', json.dumps(session_data))
             return resp
         else:
             return "Invalid credentials", 401
@@ -59,6 +61,9 @@ def transfer():
         to_account = request.form['to']
         amount = int(request.form['amount'])
         
+        if 'csrf_token' not in session_data or session_data['csrf_token'] != request.form.get('csrf_token'):
+            return "CSRF token validation failed", 403
+        
         if to_account not in user_accounts:
             return "Recipient account does not exist", 400
         if amount <= 0:
@@ -72,11 +77,12 @@ def transfer():
         
         return f"Transferred ${amount} to account {to_account}"
     
-    # GET request: show transfer form
+    csrf_token = session_data['csrf_token']
     return '''
         <form method="post">
             To account: <input type="text" name="to"><br>
             Amount: <input type="number" name="amount"><br>
+            <input type="hidden" name="csrf_token" value="''' + csrf_token + '''">
             <input type="submit" value="Transfer">
         </form>
     '''
